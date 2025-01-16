@@ -108,14 +108,14 @@ def check_pdf_accessibility(pdf_path):
 
 
 pdf_file_path = input("Name of pdf:")
-pdf_file_path = pdf_file_path + ".pdf"
+pdf_file_path = "PDFS/" + pdf_file_path + ".pdf"
 report = check_pdf_accessibility(pdf_file_path)
 
 print("Evaluating accessibility ...")
 print("")
 print("Accessibility Report-------------------------------------------------------")
 
-# Inicializando contadores gerais
+
 aprovado = 0
 com_falha = 0
 
@@ -136,3 +136,5 @@ print("")
 print("Summary-------------------------------------------------------")
 print(f"Approved: {aprovado}")
 print(f"Failed: {com_falha}")
+
+
