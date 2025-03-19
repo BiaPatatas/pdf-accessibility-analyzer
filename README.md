@@ -22,7 +22,7 @@ pip install PyMuPDF PyPDF2 langdetect pikepdf pdfplumber
 
 Run the script and provide the PDF filename when prompted:
 
-python script.py
+python Evaluate_pdf.py
 
 Place the PDF files in a folder named PDFS/ before running the script.
 
