@@ -64,42 +64,14 @@ def pdf_only_image(pdf_path):
                 break
     return only_images
 
+def lists_marked_as_lists(pdf_path):
+    pass
 
-def check_text_size(pdf_path, min_size=10):
-    """Checks if there are texts with fonts smaller than the recommended minimum."""
-    with fitz.open(pdf_path) as pdf:
-        for page in pdf:
-            text_info = page.get_text("dict")
-            for block in text_info["blocks"]:
-                for line in block.get("lines", []):
-                    for span in line.get("spans", []):
-                        if span["size"] < min_size:
-                            return False  # Text smaller than the recommended minimum
-    return True
+def tables_marked_as_tables(pdf_path):
+    pass
 
-
-def check_headers(pdf_path):
-    """Checks if the PDF has headings using larger fonts to identify headers."""
-    headers_detected = False
-    with fitz.open(pdf_path) as pdf:
-        for page in pdf:
-            text_info = page.get_text("dict")
-            for block in text_info["blocks"]:
-                for line in block.get("lines", []):
-                    for span in line.get("spans", []):
-                        if span["size"] >= 14:  # Assume larger fonts as headings
-                            headers_detected = True
-                            return headers_detected
-    return headers_detected
-
-
-def check_pdf_semantics(pdf_path):
-    """Checks if the PDF has semantic markup ('tagged PDF')."""
-    try:
-        pdf = pikepdf.Pdf.open(pdf_path)
-        return "/StructTreeRoot" in pdf.root  # PDF has semantic structure
-    except:
-        return False
+def links_identified(pdf_path):
+    pass
 
 
 # PDF Accessibility Check -----------------------------------------------------
@@ -110,11 +82,8 @@ def check_pdf_accessibility(pdf_path):
         "Title": None,
         "Author": None,
         "Language": None,
-        "Tagged PDF": False,
         "Images without alt text": 0,
         "PDF only image": False,
-        "Text size adequate": False,
-        "Headers detected": False,
     }
 
     print("Evaluating PDF accessibility...\n")
@@ -128,20 +97,11 @@ def check_pdf_accessibility(pdf_path):
     language = detect_pdf_language(pdf_path)
     accessibility_report["Language"] = language
 
-    # Semantic markup check
-    accessibility_report["Tagged PDF"] = check_pdf_semantics(pdf_path)
-
     # Count images without alternative text
     accessibility_report["Images without alt text"] = count_images_with_alt_text(pdf_path)
 
     # Check if the PDF is image-only
     accessibility_report["PDF only image"] = pdf_only_image(pdf_path)
-
-    # Minimum text size check
-    accessibility_report["Text size adequate"] = check_text_size(pdf_path)
-
-    # Detect headers
-    accessibility_report["Headers detected"] = check_headers(pdf_path)
 
     return accessibility_report
 
@@ -149,7 +109,7 @@ def check_pdf_accessibility(pdf_path):
 # Run Analysis -----------------------------------------------------------
 
 pdf_file_path = input("Enter PDF name: ")
-pdf_file_path = "PDFS/" + pdf_file_path + ".pdf"
+pdf_file_path = "PDF_testes_individuais/alt_text/" + pdf_file_path + ".pdf"
 
 report = check_pdf_accessibility(pdf_file_path)
 
