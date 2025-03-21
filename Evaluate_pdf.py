@@ -64,8 +64,31 @@ def pdf_only_image(pdf_path):
                 break
     return only_images
 
-def lists_marked_as_lists(pdf_path):
-    pass
+def lists_not_marked_as_lists(pdf_path):
+    """ Identifies unmarked lists."""
+    doc = fitz.open(pdf_path)
+    unmarked_lists = 0
+    unmarked_pages = []
+    
+    for page_num, page in enumerate(doc, start=1):
+        text_dict = page.get_text("dict")
+        page_has_unmarked_list = False
+        
+        for block in text_dict.get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = span.get("text", "").strip()
+                    if text.startswith(('- ', '* ', '•')):
+                        page_has_unmarked_list = True
+                 
+        
+        if page_has_unmarked_list:
+            unmarked_lists += 1
+            unmarked_pages.append(page_num)
+            return False
+       
+    return True
+
 
 def tables_marked_as_tables(pdf_path):
     pass
@@ -84,6 +107,7 @@ def check_pdf_accessibility(pdf_path):
         "Language": None,
         "Images without alt text": 0,
         "PDF only image": False,
+        "Lists marked as Lists": False,
     }
 
     print("Evaluating PDF accessibility...\n")
@@ -103,13 +127,16 @@ def check_pdf_accessibility(pdf_path):
     # Check if the PDF is image-only
     accessibility_report["PDF only image"] = pdf_only_image(pdf_path)
 
+    #Lists
+    accessibility_report["Lists marked as Lists"] = lists_not_marked_as_lists(pdf_path)
+
     return accessibility_report
 
 
 # Run Analysis -----------------------------------------------------------
 
 pdf_file_path = input("Enter PDF name: ")
-pdf_file_path = "PDF_testes_individuais/alt_text/" + pdf_file_path + ".pdf"
+pdf_file_path = "PDF_testes_individuais/lists/" + pdf_file_path + ".pdf"
 
 report = check_pdf_accessibility(pdf_file_path)
 
