@@ -1,10 +1,27 @@
+import re
 import PyPDF2
 from langdetect import detect
 import pdfplumber
 import fitz  # PyMuPDF
 import pikepdf
+from pdfixsdk.Pdfix import *
 
 # Functions -------------------------------------------------------------------
+
+#Structure
+def getStructTree(pdf_path: str):
+    pdfix = GetPdfix()
+    doc = pdfix.OpenDoc(pdf_path, "")
+    if not doc:
+        return None, None
+    
+    structTree = doc.GetStructTree()
+    if not structTree:
+        doc.Close()
+        return None, None
+    
+    return doc, structTree
+
 
 def extract_metadata(pdf_path):
     """Extracts metadata from the PDF."""
@@ -15,31 +32,6 @@ def extract_metadata(pdf_path):
         author = metadata.get("/Author", "No Author Found")
     
     return title, author
-
-
-def count_images_with_alt_text(pdf_path):
-    """Counts images with and without alternative text in a PDF."""
-    total_images = 0
-    images_with_alt_text = 0
-
-    doc = fitz.open(pdf_path)
-    for page in doc:
-        images = page.get_images(full=True)
-        total_images += len(images)
-
-        for img in images:
-            xref = img[0]
-
-            # Try to find alternative text in the document structure
-            for annot in page.annots():
-                if annot.type[0] == 8:  # 8 = Figure/Image
-                    alt_text = annot.info.get("Contents", "").strip()  # Try to get description
-                    if alt_text:
-                        images_with_alt_text += 1
-                        break  # If Alt Text is found, no need to check further for this image
-
-    images_without_alt_text = total_images - images_with_alt_text
-    return images_without_alt_text
 
 
 def detect_pdf_language(pdf_path):
@@ -64,30 +56,55 @@ def pdf_only_image(pdf_path):
                 break
     return only_images
 
+
 def lists_not_marked_as_lists(pdf_path):
-    """ Identifies unmarked lists."""
+    """ Identifica listas não marcadas corretamente."""
     doc = fitz.open(pdf_path)
-    unmarked_lists = 0
-    unmarked_pages = []
     
-    for page_num, page in enumerate(doc, start=1):
+    list_pattern = re.compile(r'^(\d+\.|[a-zA-Z]\.|[-*•])\s')
+    previous_was_list = False
+    
+    for page in doc:
         text_dict = page.get_text("dict")
-        page_has_unmarked_list = False
         
         for block in text_dict.get("blocks", []):
             for line in block.get("lines", []):
                 for span in line.get("spans", []):
                     text = span.get("text", "").strip()
-                    if text.startswith(('- ', '* ', '•')):
-                        page_has_unmarked_list = True
-                 
-        
-        if page_has_unmarked_list:
-            unmarked_lists += 1
-            unmarked_pages.append(page_num)
-            return False
-       
+                    if list_pattern.match(text):
+                        if previous_was_list:
+                            return False
+                        previous_was_list = True
+                    else:
+                        previous_was_list = False
+    
     return True
+
+def allFiguresHaveAltText(pdf_path: str):
+    doc, structTree = getStructTree(pdf_path)
+    if not doc or not structTree:
+        return False
+    
+    def recursiveBrowse(parent: PdsStructElement):
+        elem_type = parent.GetType(True)
+        alt_text = parent.GetAlt()
+        
+        if elem_type.lower() == "figure" and not alt_text:
+            return False
+        
+        for i in range(parent.GetNumChildren()):
+            if parent.GetChildType(i) == kPdsStructChildElement:
+                if not recursiveBrowse(structTree.GetStructElementFromObject(parent.GetChildObject(i))):
+                    return False
+        
+        return True
+    
+    root_elem = structTree.GetStructElementFromObject(structTree.GetObject())
+    result = recursiveBrowse(root_elem) if root_elem else False
+    doc.Close()
+    return result
+
+
 
 
 def tables_marked_as_tables(pdf_path):
@@ -105,9 +122,9 @@ def check_pdf_accessibility(pdf_path):
         "Title": None,
         "Author": None,
         "Language": None,
-        "Images without alt text": 0,
         "PDF only image": False,
         "Lists marked as Lists": False,
+        "Figures with alt text": False,
     }
 
     print("Evaluating PDF accessibility...\n")
@@ -121,11 +138,11 @@ def check_pdf_accessibility(pdf_path):
     language = detect_pdf_language(pdf_path)
     accessibility_report["Language"] = language
 
-    # Count images without alternative text
-    accessibility_report["Images without alt text"] = count_images_with_alt_text(pdf_path)
-
     # Check if the PDF is image-only
     accessibility_report["PDF only image"] = pdf_only_image(pdf_path)
+
+    #Check if there is alt text in figures
+    accessibility_report["Figures with alt text"] = allFiguresHaveAltText(pdf_path)
 
     #Lists
     accessibility_report["Lists marked as Lists"] = lists_not_marked_as_lists(pdf_path)
@@ -136,7 +153,7 @@ def check_pdf_accessibility(pdf_path):
 # Run Analysis -----------------------------------------------------------
 
 pdf_file_path = input("Enter PDF name: ")
-pdf_file_path = "PDF_testes_individuais/lists/" + pdf_file_path + ".pdf"
+pdf_file_path = "PDFS/" + pdf_file_path + ".pdf"
 
 report = check_pdf_accessibility(pdf_file_path)
 
