@@ -1,70 +1,57 @@
 import fitz  # PyMuPDF
-from langdetect import detect
+import requests
 
-def lists_marked_as_lists(pdf_path):
-    """ Identifies unmarked lists."""
+def get_links_info(pdf_path):
     doc = fitz.open(pdf_path)
-    unmarked_lists = 0
-    unmarked_pages = []
-    
-    for page_num, page in enumerate(doc, start=1):
-        text_dict = page.get_text("dict")
-        page_has_unmarked_list = False
-        
-        for block in text_dict.get("blocks", []):
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    text = span.get("text", "").strip()
-                    if text.startswith(('- ', '* ', '•')):
-                        page_has_unmarked_list = True
-                 
-        
-        if page_has_unmarked_list:
-            unmarked_lists += 1
-            unmarked_pages.append(page_num)
-            return False
-       
-    return True
+    total_pages = len(doc)
 
-def tables_marked_as_tables(pdf_path):
-    """Checks if tables are correctly marked in the PDF."""
-    doc = fitz.open(pdf_path)
-    tables_found = 0
-    
-    for page in doc:
-        if page.find_tables():  
-            tables_found += 1
-    
-    return tables_found > 0
+    external_links = []
+    internal_links = []
+    fake_links = []
 
-def links_identified(pdf_path):
-    """Checks if links are properly tagged and have descriptive text."""
-    doc = fitz.open(pdf_path)
-    links_found = 0
-    
-    for page in doc:
+    for page_num, page in enumerate(doc):
         links = page.get_links()
-        if links:
-            links_found += len(links)
-    
-    return links_found > 0
+        for link in links:
+            uri = link.get("uri", "")
+            kind = link.get("kind", None)
+            dest_page = link.get("page", None)
 
-def check_pdf_accessibility(pdf_path):
-    """Runs an accessibility evaluation on the PDF."""
-    lists_report = lists_marked_as_lists(pdf_path)
-    accessibility_report = {
-        "Lists properly marked": lists_report,
-        "Tables properly marked": tables_marked_as_tables(pdf_path),
-        "Links properly identified": links_identified(pdf_path),
-    }
-    
-    return accessibility_report
+            if uri.startswith("http://") or uri.startswith("https://"):
+                external_links.append(uri)
+            elif kind == 1:  # internal link
+                if dest_page is not None and 0 <= dest_page < total_pages:
+                    internal_links.append((page_num, dest_page))
+                else:
+                    fake_links.append((page_num, "invalid internal"))
+            else:
+                if not uri and dest_page is None:
+                    fake_links.append((page_num, "no uri or dest"))
 
-pdf_file_path = input("Enter PDF name: ")
-pdf_file_path = "PDF_testes_individuais/" + pdf_file_path + ".pdf"
+    doc.close()
+    return external_links, internal_links, fake_links
 
-report = check_pdf_accessibility(pdf_file_path)
 
-print("\nAccessibility Report -------------------------------------")
-for key, value in report.items():
-    print(f"{key}: {value}")
+def check_external_links(links):
+    results = []
+
+    for link in links:
+        try:
+            response = requests.head(link, allow_redirects=True, timeout=5)
+            results.append(response.status_code == 200)
+        except Exception:
+            results.append(False)
+
+    return results
+
+
+if __name__ == "__main__":
+    pdf_path = input("Caminho para o PDF: ").strip()
+
+    external, internal, fake = get_links_info(pdf_path)
+    checked_links = check_external_links(external)
+
+    # Verificar se existe algum link válido
+    link_valid = any(checked_links) or bool(internal) or bool(fake)
+
+    # Imprimir o resultado final
+    print("\nLink Valid:", link_valid)

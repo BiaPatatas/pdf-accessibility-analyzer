@@ -5,6 +5,8 @@ import pdfplumber
 import fitz  # PyMuPDF
 import pikepdf
 from pdfixsdk.Pdfix import *
+import requests
+
 
 # Functions -------------------------------------------------------------------
 
@@ -29,21 +31,49 @@ def extract_metadata(pdf_path):
         reader = PyPDF2.PdfReader(file)
         metadata = reader.metadata
         title = metadata.get("/Title", "No Title Found")
-        author = metadata.get("/Author", "No Author Found")
     
-    return title, author
+    return title
 
+#Linguagem-------------------------------------------------------------------------------------
 
-def detect_pdf_language(pdf_path):
-    """Detects the language of the PDF."""
-    with open(pdf_path, 'rb') as file:
-        pdf_reader = PyPDF2.PdfReader(file)
-        text = ''.join(page.extract_text() or '' for page in pdf_reader.pages)
-    
-    if text.strip():
-        return detect(text)
+def get_pdf_declared_language(path):
+    try:
+        with pikepdf.Pdf.open(path) as pdf:
+            root = pdf.trailer["/Root"]
+            lang = root.get('/Lang', None)
+            if lang:
+                return str(lang).strip()
+    except Exception as e:
+        print(f"Erro ao extrair idioma declarado: {e}")
     return None
 
+
+def detect_language_from_text(path):
+    try:
+        with fitz.open(path) as doc:
+            text = "".join(page.get_text() for page in doc)
+        return detect(text)
+    except Exception as e:
+        print(f"Erro na detecção automática: {e}")
+        return None
+
+
+def normalize_lang(tag):
+    if not tag:
+        return None
+    return tag.lower().split('-')[0]
+
+
+def compare_languages(pdf_path):
+    declarado = get_pdf_declared_language(pdf_path)
+    detectado = detect_language_from_text(pdf_path)
+
+    dec_norm = normalize_lang(declarado)
+    det_norm = normalize_lang(detectado)
+
+    return declarado, detectado, dec_norm == det_norm if dec_norm and det_norm else False
+
+#----------------------------------------------------------------------------------------------
 
 def pdf_only_image(pdf_path):
     """Checks if the PDF contains only images without text."""
@@ -105,13 +135,56 @@ def allFiguresHaveAltText(pdf_path: str):
     return result
 
 
+#Links----------------------------------------------------------------------------
 
+def get_links_info(pdf_path):
+    doc = fitz.open(pdf_path)
+    total_pages = len(doc)
+
+    external_links = []
+    internal_links = []
+    fake_links = []
+
+    for page_num, page in enumerate(doc):
+        links = page.get_links()
+        for link in links:
+            uri = link.get("uri", "")
+            kind = link.get("kind", None)
+            dest_page = link.get("page", None)
+
+            if uri.startswith("http://") or uri.startswith("https://"):
+                external_links.append(uri)
+            elif kind == 1:  # internal link
+                if dest_page is not None and 0 <= dest_page < total_pages:
+                    internal_links.append((page_num, dest_page))
+                else:
+                    fake_links.append((page_num, "invalid internal"))
+            else:
+                if not uri and dest_page is None:
+                    fake_links.append((page_num, "no uri or dest"))
+
+    doc.close()
+    return external_links, internal_links, fake_links
+
+
+def check_external_links(links):
+    results = []
+
+    for link in links:
+        try:
+            response = requests.head(link, allow_redirects=True, timeout=5)
+            results.append(response.status_code == 200)
+        except Exception:
+            results.append(False)
+
+    return results
+
+#----------------------------------------------------------------
 
 def tables_marked_as_tables(pdf_path):
     pass
 
-def links_identified(pdf_path):
-    pass
+
 
 
 # PDF Accessibility Check -----------------------------------------------------
@@ -120,23 +193,29 @@ def check_pdf_accessibility(pdf_path):
     """Runs an accessibility evaluation on the PDF."""
     accessibility_report = {
         "Title": None,
-        "Author": None,
-        "Language": None,
+        "Language declared": None,
+        "Language detected": None,
+        "Languages match": False,
         "PDF only image": False,
         "Lists marked as Lists": False,
         "Figures with alt text": False,
+        "Links Valid": None,
+        
     }
 
     print("Evaluating PDF accessibility...\n")
 
     # Metadata
-    title, author = extract_metadata(pdf_path)
+    title = extract_metadata(pdf_path)
     accessibility_report["Title"] = title
-    accessibility_report["Author"] = author
+    #accessibility_report["Author"] = author
 
     # Language detection
-    language = detect_pdf_language(pdf_path)
-    accessibility_report["Language"] = language
+    lang_declared, lang_detected, lang_match = compare_languages(pdf_path)
+    accessibility_report["Language declared"] = lang_declared
+    accessibility_report["Language detected"] = lang_detected
+    accessibility_report["Languages match"] = lang_match
+
 
     # Check if the PDF is image-only
     accessibility_report["PDF only image"] = pdf_only_image(pdf_path)
@@ -147,13 +226,22 @@ def check_pdf_accessibility(pdf_path):
     #Lists
     accessibility_report["Lists marked as Lists"] = lists_not_marked_as_lists(pdf_path)
 
+    #Links
+    external, internal, fake = get_links_info(pdf_path)
+    checked_links = check_external_links(external)
+
+    # Verificar se existe algum link válido
+    link_valid = any(checked_links) or bool(internal) or bool(fake)
+
+    accessibility_report["Links Valid"] = link_valid
+
     return accessibility_report
 
 
 # Run Analysis -----------------------------------------------------------
 
 pdf_file_path = input("Enter PDF name: ")
-pdf_file_path = "PDFS/" + pdf_file_path + ".pdf"
+pdf_file_path = pdf_file_path 
 
 report = check_pdf_accessibility(pdf_file_path)
 
@@ -168,13 +256,15 @@ for key, value in report.items():
             passed += 1
         else:
             failed += 1
-    
+    if key == "Language declared" or key == "Language detected" :
+        pass
     else:
-        if value in [False, None, "No Title Found", "No Author Found", 0, "Only Images"]:
+        if value in [False, None, "No Title Found", 0, "Only Images"]:
             failed += 1
         else:
             passed += 1
     print(f"{key}: {value}")
+
 
 print("\nSummary ----------------------------------------------------------")
 print(f"Passed: {passed}")
