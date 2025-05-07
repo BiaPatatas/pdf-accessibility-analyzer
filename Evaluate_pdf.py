@@ -180,12 +180,44 @@ def check_external_links(links):
     return results
 
 #----------------------------------------------------------------
+def check_headers(pdf_path: str) -> bool:
+    pdfix = GetPdfix()
+    doc = pdfix.OpenDoc(pdf_path, "")
+    if not doc:
+        return False
+    
+    structTree = doc.GetStructTree()
+    if not structTree:
+        return False
+    
+    header_found = False
 
-def tables_marked_as_tables(pdf_path):
-    pass
+    def recursiveBrowse(parent: PdsStructElement):
+        nonlocal header_found
+        elem_type = parent.GetType(True)
 
+        if elem_type == "Table":
+            for i in range(parent.GetNumChildren()):
+                child_obj = parent.GetChildObject(i)
+                child_elem = structTree.GetStructElementFromObject(child_obj)
+                if not child_elem:
+                    continue
+                if child_elem.GetType(True) == "THead":
+                    header_found = True
+                recursiveBrowse(child_elem)
+        else:
+            for i in range(parent.GetNumChildren()):
+                if parent.GetChildType(i) == kPdsStructChildElement:
+                    recursiveBrowse(structTree.GetStructElementFromObject(parent.GetChildObject(i)))
 
+    root_elem = structTree.GetStructElementFromObject(structTree.GetObject())
+    if root_elem:
+        recursiveBrowse(root_elem)
 
+    doc.Close()
+    return header_found
+    
+      
 
 # PDF Accessibility Check -----------------------------------------------------
 
@@ -199,8 +231,8 @@ def check_pdf_accessibility(pdf_path):
         "PDF only image": False,
         "Lists marked as Lists": False,
         "Figures with alt text": False,
-        "Links Valid": None,
-        
+        "Links Valid": None, 
+        "Table With Headers" : False,
     }
 
     print("Evaluating PDF accessibility...\n")
@@ -231,9 +263,15 @@ def check_pdf_accessibility(pdf_path):
     checked_links = check_external_links(external)
 
     # Verificar se existe algum link válido
-    link_valid = any(checked_links) or bool(internal) or bool(fake)
+    all_external_valid = all(checked_links) if checked_links else True
+    no_fake_links = len(fake) == 0
+
+    link_valid = all_external_valid and no_fake_links
 
     accessibility_report["Links Valid"] = link_valid
+
+    # Verificar Headers de tabela
+    accessibility_report["Table With Headers"] = check_headers(pdf_path)
 
     return accessibility_report
 

@@ -32,7 +32,7 @@ def browseTags(pdf_path: str):
     
     doc.Close()
 
-browseTags("PDF_testes_individuais/alt_text/pdf_sem_alt_text.pdf")
+browseTags("PDF_testes_individuais\\tables\\tabela_com_headers.pdf")
 
 
 
